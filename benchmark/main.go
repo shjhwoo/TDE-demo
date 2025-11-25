@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -131,6 +132,12 @@ func StartLoadAndLogResult(stage string, operationSec int) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(operationSec)*time.Second)
 	defer cancel()
 
+	// 1. SAR 명령 병렬 실행
+	sarCmd, err := RunSarInParallel(ctx, stage, operationSec)
+	if err != nil {
+		return err
+	}
+
 	// 2. 동시 실행 스레드 (Goroutine) 시작
 	for i := 0; i < Concurrency; i++ {
 		wg.Add(1)
@@ -180,10 +187,16 @@ func StartLoadAndLogResult(stage string, operationSec int) error {
 	tps := float64(totalQueries) / totalTime.Seconds()
 
 	// 3. CSV 로그 기록
-	err := LogResult(stage, totalQueries, totalTime, tps)
+	err = LogResult(stage, totalQueries, totalTime, tps)
 	if err != nil {
-		return fmt.Errorf("logging failed: %w", err)
+		// 부하 테스트 실패 시 sar 프로세스도 종료 (cancel() 호출)
+		cancel()
+		WaitForSar(sarCmd) // sar 완료 대기
+		return err
 	}
+
+	// 3. 부하 테스트 완료 후, sar도 완료되기를 대기 (시간이 되었으므로 sar는 자연 종료)
+	WaitForSar(sarCmd)
 
 	return nil
 }
@@ -233,4 +246,54 @@ func DecryptTable(tableName string) error {
 
 	log.Printf("Table %s decrypted successfully.\n", tableName)
 	return nil
+}
+
+// RunSarInParallel: sar 명령을 백그라운드에서 실행하고 context가 취소되면 종료합니다.
+// stageName: 출력 파일 이름에 사용할 단계 이름 (예: Baseline, Overhead)
+// duration: sar를 실행할 시간 (초)
+func RunSarInParallel(ctx context.Context, stageName string, duration int) (*exec.Cmd, error) {
+	outputFile := fmt.Sprintf("sar_%s_report.log", stageName)
+
+	// sar -u 10 [횟수] > 파일명
+	// 횟수 = duration / 10초 주기
+	count := duration / 10
+	if count == 0 {
+		count = 1 // 최소 1회 실행
+	}
+
+	// sar 명령어 설정
+	cmd := exec.CommandContext(ctx, "sar", "-u", "10", fmt.Sprintf("%d", count))
+
+	// 출력 파일을 생성하고 cmd의 Stdout을 연결합니다.
+	output, err := os.Create(outputFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create sar output file: %w", err)
+	}
+	cmd.Stdout = output
+
+	// 1. sar 프로세스 시작
+	if err := cmd.Start(); err != nil {
+		output.Close()
+		return nil, fmt.Errorf("failed to start sar command: %w", err)
+	}
+	output.Close()
+
+	fmt.Printf("[SAR] Starting SAR for %s, output to %s\n", stageName, outputFile)
+
+	// 2. 부하 테스트가 끝날 때까지 기다리도록 cmd 객체만 반환합니다.
+	return cmd, nil
+}
+
+// WaitForSar: sar 프로세스가 완료되기를 기다립니다.
+func WaitForSar(cmd *exec.Cmd) {
+	if cmd != nil {
+		// Time.Sleep으로 전체 duration을 기다리는 대신, cmd.Wait()으로 sar가 완료되기를 기다립니다.
+		// sar는 횟수가 정해져 있어 부하 테스트와 거의 동시에 종료될 것입니다.
+		if err := cmd.Wait(); err != nil {
+			// sar가 0이 아닌 exit code로 종료될 수 있습니다 (e.g., 부하 테스트보다 일찍 끝났을 경우)
+			fmt.Printf("[SAR] %s finished with error (expected, often due to forced stop or timing): %v\n", cmd.Path, err)
+		} else {
+			fmt.Printf("[SAR] %s finished successfully.\n", cmd.Path)
+		}
+	}
 }
