@@ -46,7 +46,7 @@ func main() {
 		panic(err)
 	}
 
-	err = DecryptTable("h00000.TCUSTOMERPERSONAL")
+	err = DecryptTable("h00000.tcustomerpersonal")
 	if err != nil {
 		panic(err)
 	}
@@ -83,7 +83,7 @@ func CheckBaseLine(operationSec int) error {
 }
 
 func CheckOverhead(operationSec int) error {
-	err := EncryptTable("h00000.TCUSTOMERPERSONAL")
+	err := EncryptTable("h00000.tcustomerpersonal")
 	if err != nil {
 		return err
 	}
