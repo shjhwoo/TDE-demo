@@ -83,7 +83,7 @@ func CheckBaseLine(operationSec int) error {
 }
 
 func CheckOverhead(operationSec int) error {
-	err := EncryptTable("TCUSTOMERPERSONAL")
+	err := EncryptTable("h00000.TCUSTOMERPERSONAL")
 	if err != nil {
 		return err
 	}
