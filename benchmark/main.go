@@ -109,16 +109,51 @@ func EncryptTable(tableName string) error {
 	if err != nil {
 		return err
 	}
-
 	return nil
 }
 
 // restart DB server + //10분 실행
 func CheckWorstCase(operationSec int) error {
-	err := StartLoadAndLogResult("CheckWorstCase", operationSec)
+
+	err := RestartDBServer()
 	if err != nil {
 		return err
 	}
+
+	err = StartLoadAndLogResult("CheckWorstCase", operationSec)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func RestartDBServer() error {
+	fmt.Println("--- Attempting to STOP MariaDB Service ---")
+	// 1. 서비스 정지
+	stopCmd := exec.Command("sudo", "systemctl", "stop", "mariadb")
+	// stop 명령은 에러가 나더라도 무시하고 진행하는 경우가 많습니다.
+	if out, err := stopCmd.CombinedOutput(); err != nil {
+		// Stop에 실패하더라도, 경고만 출력하고 재시작 시도 (이미 멈춰있을 수 있음)
+		fmt.Printf("Warning: MariaDB stop command failed (may be already stopped). Output: %s, Error: %v\n", out, err)
+	}
+
+	// 2. 충분한 대기 시간 (정지 완료 대기)
+	time.Sleep(20 * time.Second)
+
+	fmt.Println("--- Attempting to START MariaDB Service ---")
+	// 3. 서비스 시작
+	startCmd := exec.Command("sudo", "systemctl", "start", "mariadb")
+	if out, err := startCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to start MariaDB service: %s, Error: %w", out, err)
+	}
+
+	// 4. DB가 완전히 부팅되고 연결 가능해질 때까지 대기 (필수)
+	fmt.Println("Waiting 20 seconds for MariaDB to fully restart...")
+	time.Sleep(20 * time.Second)
+
+	// TODO: ConnectDB()를 호출하여 DB 연결을 확인하는 로직을 추가하는 것이 가장 안전합니다.
+
+	fmt.Println("--- MariaDB Service Restarted Successfully ---")
 	return nil
 }
 
