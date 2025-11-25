@@ -16,9 +16,9 @@ import (
 	"github.com/tnh9570/tnhGoFramework/dbm"
 )
 
-var targetDBServerHost = "192.168.100.230"
+var targetDBServerHost = "127.0.0.1"
 var targetDBServerPort = "3306"
-var targetDBServerUser = "manager"
+var targetDBServerUser = "root"
 var targetDBServerPassword = "mgrsol123"
 
 var operationSec = 10 * 60 //10 minutes
